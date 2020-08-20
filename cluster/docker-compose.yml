@@ -1,0 +1,52 @@
+version: '3'
+services:
+  lb:
+    hostname: lb
+    build: .
+    ports:
+      - '25672:5672'
+      - '15672:15672'
+    volumes:
+      - $PWD/haproxy:/usr/local/etc/haproxy
+
+  rmq1:
+    hostname: rmq1
+    image: rabbitmq:3.8.6
+    volumes:
+      - $PWD/dat/rabbit1:/var/lib/rabbitmq
+      - $PWD/rmq.conf:/etc/rabbitmq/rabbitmq.conf
+
+  rmq2:
+    hostname: rmq2
+    image: rabbitmq:3.8.6
+    volumes:
+      - $PWD/dat/rabbit2:/var/lib/rabbitmq
+      - $PWD/rmq.conf:/etc/rabbitmq/rabbitmq.conf
+
+  rmq3:
+    hostname: rmq3
+    image: rabbitmq:3.8.6
+    volumes:
+      - $PWD/dat/rabbit3:/var/lib/rabbitmq
+      - $PWD/rmq.conf:/etc/rabbitmq/rabbitmq.conf
+
+  rmq4:
+    hostname: rmq4
+    image: rabbitmq:3.8.6
+    volumes:
+      - $PWD/dat/rabbit4:/var/lib/rabbitmq
+      - $PWD/rmq.conf:/etc/rabbitmq/rabbitmq.conf
+
+  rmq5:
+    hostname: rmq5
+    image: rabbitmq:3.8.6
+    volumes:
+      - $PWD/dat/rabbit5:/var/lib/rabbitmq
+      - $PWD/rmq.conf:/etc/rabbitmq/rabbitmq.conf
+
+  rmq6:
+    hostname: rmq6
+    image: rabbitmq:3.8.6
+    volumes:
+      - $PWD/dat/rabbit6:/var/lib/rabbitmq
+      - $PWD/rmq.conf:/etc/rabbitmq/rabbitmq.conf

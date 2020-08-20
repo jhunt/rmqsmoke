@@ -1,0 +1,177 @@
+#!/bin/bash
+set -eu
+
+rmq() {
+  local x=$1 ; shift
+  docker exec -it rmqlab_rmq${x}_1 "$@"
+}
+
+enable_http_management() {
+  local x=$1
+  echo ; echo ; echo "ENABLING HTTP MANAGEMENT on rmq$x..."; echo
+  rmq $x rabbitmq-plugins enable rabbitmq_management
+}
+
+setup_initial_cluster() {
+  for x in 2 3; do
+    echo ; echo ; echo "CLUSTERING rmq$x with rmq1..."; echo
+    rmq $x rabbitmqctl stop_app
+    rmq $x rabbitmqctl reset
+    rmq $x rabbitmqctl join_cluster rabbit@rmq1
+    rmq $x rabbitmqctl start_app
+    echo "=============================================="
+  done
+  echo ; echo
+  for x in {4..6}; do
+    echo "STOPPING rmq$x..."
+    rmq $x rabbitmqctl stop_app
+  done
+}
+
+setup_admin_user() {
+  echo ; echo ; echo "SETTING UP ADMIN ACCOUNT admin/password..."; echo
+  rmq 1 rabbitmqctl add_user admin password
+  rmq 1 rabbitmqctl set_user_tags admin management
+}
+
+setup_user() {
+  echo ; echo ; echo "SETTING UP REGULAR ACCOUNT $1/$2..."; echo
+  rmq 1 rabbitmqctl add_user $1 $2
+  rmq 1 rabbitmqctl set_user_tags $1 administrator
+  rmq 1 rabbitmqctl set_permissions -p / $1 '.*' '.*' '.*'
+}
+
+setup_mirror_policy() {
+  echo ; echo ; echo "SETTING UP MIRRORING POLICY..."; echo
+  rmq 3 rabbitmqctl set_policy ops-ha "." '{"ha-mode":"exactly", "ha-params":2}'  --priority 1 --apply-to queues
+  rmq 3 rabbitmqctl list_policies
+}
+
+intro() {
+  local x=$1
+  local n=$2
+  echo ; echo ; echo "INTRODUCING rmq$x to cluster via rmq$n..."
+  rmq $x rabbitmqctl reset
+  rmq $x rabbitmqctl join_cluster rabbit@rmq$n
+  rmq $x rabbitmqctl start_app
+  echo "=============================================="
+}
+
+stepd() {
+  local x=$1
+  echo ; echo ; echo "STEPPING DOWN rmq$x..."
+  rmq $x rabbitmqctl stop_app
+  rmq $x rabbitmqctl reset
+  echo "=============================================="
+}
+
+command=${1:-help}
+shift
+
+case $command in
+rmq)
+  rmq "$@"
+  exit 0
+  ;;
+
+init)
+  rm -rf dat
+  for x in {1..6}; do
+    mkdir -p dat/rabbit$x;
+    echo foo > dat/rabbit$x/.erlang.cookie
+    chmod 0600 dat/rabbit$x/.erlang.cookie
+  done
+  docker-compose -p rmqlab up
+  exit 0
+  ;;
+
+hatop)
+  docker exec -it rmqlab_lb_1 hatop -s /var/run/haproxy.stats
+  exit 0
+  ;;
+
+http)
+  enable_http_management ${1:-3}
+  setup_admin_user
+  exit 0
+  ;;
+
+setup-initial-cluster)
+  setup_initial_cluster
+  exit 0
+  ;;
+
+setup-mirror-policy)
+  setup_mirror_policy
+  exit 0
+  ;;
+
+setup-user)
+  setup_user ${1:-rmq} "${2:-sekrit}"
+  exit 0
+  ;;
+
+step1)
+  setup_initial_cluster
+  setup_mirror_policy
+  setup_user rmq sekrit
+  exit 0
+  ;;
+
+bounce)
+  for x in "$@"; do
+    rmq $x rabbitmqctl stop_app
+    sleep 5
+    rmq $x rabbitmqctl start_app
+    sleep 5
+  done
+  exit 0
+  ;;
+
+intro*)
+  for x in "$@"; do
+    intro $x 3
+  done
+  exit 0
+  ;;
+
+stat)
+  x=${1:-3}
+  rmq $x rabbitmqctl cluster_status
+  exit 0
+  ;;
+
+qstat)
+  x=${1:-3}
+  rmq $x rabbitmqctl list_queues name state pid slave_pids synchronised_slave_pids
+  exit 0
+  ;;
+
+stepd*)
+  for x in "$@"; do
+    stepd $x
+  done
+  exit 0
+  ;;
+
+roll)
+  for x in "$@"; do
+    n=$(( x - 3 ))
+    intro $x $n
+    stepd $n
+  done
+  ;;
+
+unroll)
+  for x in "$@"; do
+    n=$(( x - 3 ))
+    intro $n $x
+    stepd $x
+  done
+  ;;
+
+*)
+  echo >&2 "USAGE $0 (init|hatop|step1)"
+  exit 1
+  ;;
+esac
